@@ -1,10 +1,15 @@
-import { useState } from "react";
-
+import React, { useState } from "react";
+import { Keypair, SystemProgram, Transaction } from "@solana/web3.js";
+import { useConnection, useWallet } from '@solana/wallet-adapter-react';
+import { MINT_SIZE, TOKEN_2022_PROGRAM_ID, createInitializeMint2Instruction, getMinimumBalanceForRentExemptMint } from "@solana/spl-token";
 import { Input } from "./ui/input";
 import { Button } from "./ui/button";
 import { TokenInputField } from "@/types/tokenInputs.types";
 
 const TokenLaunchPad = () => {
+    const { connection } = useConnection();
+    const wallet = useWallet();
+
     const [inputs, setInputs] = useState<{
         name: string;
         symbol: string;
@@ -26,15 +31,48 @@ const TokenLaunchPad = () => {
     };
 
     const inputFields: TokenInputField[] = [
-        { label: "Name", value: inputs.name, onChange: handleInputChange, required: true },
-        { label: "Symbol", value: inputs.symbol, onChange: handleInputChange, required: true },
-        { label: "Image URL", value: inputs.imageUrl, onChange: handleInputChange, required: true },
-        { label: "Initial Supply", value: inputs.initialSupply, onChange: handleInputChange, required: true },
+        { label: "Name", name: "name", value: inputs.name, onChange: handleInputChange, required: true },
+        { label: "Symbol", name: "symbol", value: inputs.symbol, onChange: handleInputChange, required: true },
+        { label: "Image URL", name: "imageUrl", value: inputs.imageUrl, onChange: handleInputChange, required: true },
+        { label: "Initial Supply", name: "initialSupply", value: inputs.initialSupply, onChange: handleInputChange, required: true },
     ];
 
-    const handleSubmit = (event: React.FormEvent<HTMLFormElement>) => {
+    const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
         event.preventDefault();
-        console.log("Form submitted with:", inputs);
+        if (!wallet.publicKey) {
+            console.error("Wallet not connected");
+            return;
+        }
+
+        const mintKeypair = Keypair.generate();
+        const lamports = await getMinimumBalanceForRentExemptMint(connection);
+        const transaction = new Transaction().add(
+            SystemProgram.createAccount({
+                fromPubkey: wallet.publicKey,
+                newAccountPubkey: mintKeypair.publicKey,
+                space: MINT_SIZE,
+                lamports,
+                programId: TOKEN_2022_PROGRAM_ID,
+            }),
+            createInitializeMint2Instruction(
+                mintKeypair.publicKey,
+                9,
+                wallet.publicKey,
+                wallet.publicKey,
+                TOKEN_2022_PROGRAM_ID
+            )
+        );
+
+        transaction.feePayer = wallet.publicKey;
+        transaction.recentBlockhash = (await connection.getLatestBlockhash()).blockhash;
+        transaction.partialSign(mintKeypair);
+
+        try {
+            await wallet.sendTransaction(transaction, connection);
+            console.log(`Token mint created at ${mintKeypair.publicKey.toBase58()}`);
+        } catch (error) {
+            console.error("Failed to create token:", error);
+        }
     };
 
     return (
@@ -46,13 +84,13 @@ const TokenLaunchPad = () => {
             <p className="text-center text-gray-400 mb-6">
                 Launch your token with ease in a few simple steps.
             </p>
-            {inputFields.map(({ label, value, onChange, required }) => (
+            {inputFields.map(({ label, name, value, onChange, required }) => (
                 <div key={label} className="space-y-2">
                     <label className="block text-sm font-medium text-gray-300">
                         {label}
                     </label>
                     <Input
-                        name={label.toLowerCase().replace(" ", "")}
+                        name={name}
                         type="text"
                         placeholder={label}
                         value={value}
