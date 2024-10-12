@@ -1,13 +1,8 @@
 import { useState } from "react";
+
 import { Input } from "./ui/input";
 import { Button } from "./ui/button";
-
-type InputField = {
-    label: string;
-    value: string;
-    onChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
-    required: boolean;
-};
+import { TokenInputField } from "@/types/tokenInputs.types";
 
 const TokenLaunchPad = () => {
     const [inputs, setInputs] = useState<{
@@ -30,7 +25,7 @@ const TokenLaunchPad = () => {
         }));
     };
 
-    const inputFields: InputField[] = [
+    const inputFields: TokenInputField[] = [
         { label: "Name", value: inputs.name, onChange: handleInputChange, required: true },
         { label: "Symbol", value: inputs.symbol, onChange: handleInputChange, required: true },
         { label: "Image URL", value: inputs.imageUrl, onChange: handleInputChange, required: true },
