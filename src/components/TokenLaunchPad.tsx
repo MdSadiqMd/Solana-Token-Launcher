@@ -1,23 +1,36 @@
 import React, { useState } from "react";
 import { Keypair, SystemProgram, Transaction } from "@solana/web3.js";
 import { useConnection, useWallet } from '@solana/wallet-adapter-react';
-import { TOKEN_2022_PROGRAM_ID, getMintLen, createInitializeMetadataPointerInstruction, createInitializeMintInstruction, TYPE_SIZE, LENGTH_SIZE, ExtensionType } from "@solana/spl-token";
+import {
+    TOKEN_2022_PROGRAM_ID,
+    getMintLen,
+    createInitializeMetadataPointerInstruction,
+    createInitializeMintInstruction,
+    TYPE_SIZE,
+    LENGTH_SIZE,
+    ExtensionType,
+    getAssociatedTokenAddressSync,
+    createAssociatedTokenAccountInstruction,
+    createMintToInstruction
+} from "@solana/spl-token";
 import { createInitializeInstruction, pack } from '@solana/spl-token-metadata';
 
 import { Input } from "./ui/input";
 import { Button } from "./ui/button";
 import { TokenInputField } from "@/types/tokenInputs.types";
 
+interface TokenInputs {
+    name: string;
+    symbol: string;
+    imageUrl: string;
+    initialSupply: string;
+}
+
 const TokenLaunchPad: React.FC = () => {
     const { connection } = useConnection();
-    const wallet = useWallet();
+    const { publicKey, sendTransaction } = useWallet();
 
-    const [inputs, setInputs] = useState<{
-        name: string;
-        symbol: string;
-        imageUrl: string;
-        initialSupply: string;
-    }>({
+    const [inputs, setInputs] = useState<TokenInputs>({
         name: "",
         symbol: "",
         imageUrl: "",
@@ -26,10 +39,7 @@ const TokenLaunchPad: React.FC = () => {
 
     const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>): void => {
         const { name, value } = e.target;
-        setInputs((prevInputs) => ({
-            ...prevInputs,
-            [name]: value,
-        }));
+        setInputs(prevInputs => ({ ...prevInputs, [name]: value }));
     };
 
     const inputFields: TokenInputField[] = [
@@ -41,7 +51,7 @@ const TokenLaunchPad: React.FC = () => {
 
     const handleSubmit = async (event: React.FormEvent<HTMLFormElement>): Promise<void> => {
         event.preventDefault();
-        if (!wallet.publicKey) {
+        if (!publicKey) {
             console.error('Wallet not connected');
             return;
         }
@@ -55,21 +65,21 @@ const TokenLaunchPad: React.FC = () => {
                 uri: inputs.imageUrl,
                 additionalMetadata: [],
             };
-            console.log("metadata: ", metadata);
 
             const mintLen = getMintLen([ExtensionType.MetadataPointer]);
             const metadataLen = TYPE_SIZE + LENGTH_SIZE + pack(metadata).length;
             const lamports = await connection.getMinimumBalanceForRentExemption(mintLen + metadataLen);
-            const transaction = new Transaction().add(
+
+            const transaction1 = new Transaction().add(
                 SystemProgram.createAccount({
-                    fromPubkey: wallet.publicKey,
+                    fromPubkey: publicKey,
                     newAccountPubkey: mintKeypair.publicKey,
                     space: mintLen,
                     lamports,
                     programId: TOKEN_2022_PROGRAM_ID,
                 }),
-                createInitializeMetadataPointerInstruction(mintKeypair.publicKey, wallet.publicKey, mintKeypair.publicKey, TOKEN_2022_PROGRAM_ID), // Ensure this function is imported
-                createInitializeMintInstruction(mintKeypair.publicKey, 9, wallet.publicKey, null, TOKEN_2022_PROGRAM_ID), // Ensure this function is imported
+                createInitializeMetadataPointerInstruction(mintKeypair.publicKey, publicKey, mintKeypair.publicKey, TOKEN_2022_PROGRAM_ID),
+                createInitializeMintInstruction(mintKeypair.publicKey, 9, publicKey, null, TOKEN_2022_PROGRAM_ID),
                 createInitializeInstruction({
                     programId: TOKEN_2022_PROGRAM_ID,
                     mint: mintKeypair.publicKey,
@@ -77,16 +87,50 @@ const TokenLaunchPad: React.FC = () => {
                     name: metadata.name,
                     symbol: metadata.symbol,
                     uri: metadata.uri,
-                    mintAuthority: wallet.publicKey,
-                    updateAuthority: wallet.publicKey,
+                    mintAuthority: publicKey,
+                    updateAuthority: publicKey,
                 }),
             );
 
-            transaction.feePayer = wallet.publicKey;
-            transaction.recentBlockhash = (await connection.getLatestBlockhash()).blockhash;
-            transaction.partialSign(mintKeypair);
-            const response = await wallet.sendTransaction(transaction, connection);
-            console.log("Transaction Succesfull", response);
+            transaction1.feePayer = publicKey;
+            transaction1.recentBlockhash = (await connection.getLatestBlockhash()).blockhash;
+            transaction1.partialSign(mintKeypair);
+            await sendTransaction(transaction1, connection);
+            console.log("Transaction1 Successful:", transaction1);
+
+            const associatedToken = getAssociatedTokenAddressSync(
+                mintKeypair.publicKey,
+                publicKey,
+                false,
+                TOKEN_2022_PROGRAM_ID,
+            );
+
+            const transaction2 = new Transaction().add(
+                createAssociatedTokenAccountInstruction(
+                    publicKey,
+                    associatedToken,
+                    publicKey,
+                    mintKeypair.publicKey,
+                    TOKEN_2022_PROGRAM_ID,
+                ),
+            );
+            await sendTransaction(transaction2, connection);
+            console.log("Transaction2 Successful:", transaction2);
+
+            const transaction3 = new Transaction().add(
+                createMintToInstruction(
+                    mintKeypair.publicKey,
+                    associatedToken,
+                    publicKey,
+                    Number(inputs.initialSupply),
+                    [],
+                    TOKEN_2022_PROGRAM_ID
+                )
+            );
+            await sendTransaction(transaction3, connection);
+            console.log("Transaction3 Successful:", transaction3);
+
+            console.log("Minted Successfully:", mintKeypair.publicKey.toBase58());
         } catch (error) {
             console.error("Transaction failed:", error);
         }
@@ -102,10 +146,8 @@ const TokenLaunchPad: React.FC = () => {
                 Launch your token with ease in a few simple steps.
             </p>
             {inputFields.map(({ label, name, value, onChange, required }) => (
-                <div key={label} className="space-y-2">
-                    <label className="block text-sm font-medium text-gray-300">
-                        {label}
-                    </label>
+                <div key={name} className="space-y-2">
+                    <label className="block text-sm font-medium text-gray-300">{label}</label>
                     <Input
                         name={name}
                         type="text"
