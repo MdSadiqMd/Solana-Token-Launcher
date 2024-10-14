@@ -17,14 +17,7 @@ import { createInitializeInstruction, pack } from '@solana/spl-token-metadata';
 
 import { Input } from "./ui/input";
 import { Button } from "./ui/button";
-import { TokenInputField } from "@/types/tokenInputs.types";
-
-interface TokenInputs {
-    name: string;
-    symbol: string;
-    imageUrl: string;
-    initialSupply: string;
-}
+import { TokenInputField, TokenInputs } from "@/types";
 
 const TokenLaunchPad: React.FC = () => {
     const { connection } = useConnection();
@@ -65,7 +58,6 @@ const TokenLaunchPad: React.FC = () => {
                 uri: inputs.imageUrl,
                 additionalMetadata: [],
             };
-
             const mintLen = getMintLen([ExtensionType.MetadataPointer]);
             const metadataLen = TYPE_SIZE + LENGTH_SIZE + pack(metadata).length;
             const lamports = await connection.getMinimumBalanceForRentExemption(mintLen + metadataLen);
@@ -91,7 +83,6 @@ const TokenLaunchPad: React.FC = () => {
                     updateAuthority: publicKey,
                 }),
             );
-
             transaction1.feePayer = publicKey;
             transaction1.recentBlockhash = (await connection.getLatestBlockhash()).blockhash;
             transaction1.partialSign(mintKeypair);
